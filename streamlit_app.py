@@ -1,151 +1,111 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import altair as alt
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# Carica i file CSV caricati dall'utente
+st.title("Dashboard Interattiva per Visualizzazione Dati")
+st.sidebar.header("Caricamento dati")
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+uploaded_files = st.sidebar.file_uploader("Carica uno o più file CSV", accept_multiple_files=True, type="csv")
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+if uploaded_files:
+    st.sidebar.success(f"{len(uploaded_files)} file caricati con successo!")
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+    # Dizionario per contenere i dati
+    datasets = {}
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+    # Legge i file caricati
+    for file in uploaded_files:
+        datasets[file.name] = pd.read_csv(file)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+    # Seleziona i dataset da visualizzare
+    dataset_names = list(datasets.keys())
+    st.sidebar.subheader("Selezione Dataset")
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+    selected_datasets = st.sidebar.multiselect("Seleziona uno o più dataset", options=dataset_names,
+                                               default=dataset_names)
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+    if selected_datasets:
+        combined_data = pd.DataFrame()
 
-    return gdp_df
+        for name in selected_datasets:
+            data = datasets[name]
+            data['Dataset'] = name  # Aggiunge una colonna per identificare il dataset
 
-gdp_df = get_gdp_data()
+            # Rimuovi eventuali spazi o caratteri speciali dai nomi delle colonne
+            data.columns = [col.replace(" ", "_").replace("[", "").replace("]", "") for col in data.columns]
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+            combined_data = pd.concat([combined_data, data], ignore_index=True)
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+        # Mostra una tabella con i dati combinati
+        st.subheader("Anteprima dei Dati Combinati")
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+        # Dividi i dati in pagine per evitare di sovraccaricare la visualizzazione
+        page_size = st.sidebar.slider("Numero di righe per pagina", min_value=1, max_value=100, value=20)
+        num_pages = (len(combined_data) + page_size - 1) // page_size  # Calcola il numero di pagine
 
-# Add some spacing
-''
-''
+        # Visualizza i dati sulla pagina selezionata
+        if 'current_page' not in st.session_state:
+            st.session_state.current_page = 0
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+        page = st.session_state.current_page
+        start_idx = page * page_size
+        end_idx = start_idx + page_size
+        paged_data = combined_data.iloc[start_idx:end_idx]
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+        # Visualizza i dati paginati
+        st.write(paged_data)
 
-countries = gdp_df['Country Code'].unique()
+        # Pulsanti di navigazione per le pagine
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Pagina Precedente") and st.session_state.current_page > 0:
+                st.session_state.current_page -= 1
 
-if not len(countries):
-    st.warning("Select at least one country")
+        with col2:
+            if st.button("Pagina Successiva") and st.session_state.current_page < num_pages - 1:
+                st.session_state.current_page += 1
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+        st.write("")  # Spazio vuoto tra i pulsanti e i dati
 
-''
-''
-''
+        # Selezione delle colonne
+        columns = combined_data.columns.tolist()
+        st.sidebar.subheader("Configurazione del Bar Chart")
 
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
+        x_column = st.sidebar.selectbox("Seleziona la colonna X", options=columns)
+        y_column = st.sidebar.selectbox("Seleziona la colonna Y", options=columns)
 
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
+        # Filtra i dati con una checkbox
+        unique_values = combined_data[x_column].unique()
+        selected_values = st.sidebar.multiselect(
+            f"Seleziona i valori da visualizzare per {x_column}", options=unique_values
         )
+
+        if selected_values:
+            # Assicura che i valori siano formattati correttamente per il confronto
+            combined_data[x_column] = combined_data[x_column].round(10)  # Adjust the number of decimals as needed
+            filtered_data = combined_data[combined_data[x_column].isin(selected_values)]
+        else:
+            filtered_data = combined_data
+
+        # Genera il grafico
+        st.subheader("Bar Chart Interattivo")
+        chart = (
+            alt.Chart(filtered_data)
+            .mark_bar()
+            .encode(
+                x=alt.X(x_column, title=f"{x_column}"),
+                y=alt.Y(y_column, title=f"{y_column}"),
+                color='Dataset',
+                tooltip=[x_column, y_column, 'Dataset']
+            )
+            .interactive()
+        )
+
+        st.altair_chart(chart, use_container_width=True)
+
+    else:
+        st.warning("Seleziona almeno un dataset per continuare.")
+
+else:
+    st.warning("Carica almeno un file CSV per iniziare.")
