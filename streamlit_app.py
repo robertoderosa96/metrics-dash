@@ -70,10 +70,13 @@ if uploaded_files:
 
         # Selezione delle colonne
         columns = combined_data.columns.tolist()
-        st.sidebar.subheader("Configurazione del Bar Chart")
+        st.sidebar.subheader("Configurazione del Grafico")
 
         x_column = st.sidebar.selectbox("Seleziona la colonna X", options=columns)
         y_column = st.sidebar.selectbox("Seleziona la colonna Y", options=columns)
+
+        # Selezione del tipo di grafico
+        chart_type = st.sidebar.radio("Seleziona il tipo di grafico", ("Bar Chart", "Line Chart"))
 
         # Filtra i dati con una checkbox
         unique_values = combined_data[x_column].unique()
@@ -89,18 +92,32 @@ if uploaded_files:
             filtered_data = combined_data
 
         # Genera il grafico
-        st.subheader("Bar Chart Interattivo")
-        chart = (
-            alt.Chart(filtered_data)
-            .mark_bar()
-            .encode(
-                x=alt.X(x_column, title=f"{x_column}"),
-                y=alt.Y(y_column, title=f"{y_column}"),
-                color='Dataset',
-                tooltip=[x_column, y_column, 'Dataset']
+        st.subheader(f"{chart_type} Interattivo")
+
+        if chart_type == "Bar Chart":
+            chart = (
+                alt.Chart(filtered_data)
+                .mark_bar()
+                .encode(
+                    x=alt.X(x_column, title=f"{x_column}"),
+                    y=alt.Y(y_column, title=f"{y_column}"),
+                    color='Dataset',
+                    tooltip=[x_column, y_column, 'Dataset']
+                )
+                .interactive()
             )
-            .interactive()
-        )
+        else:  # Line Chart
+            chart = (
+                alt.Chart(filtered_data)
+                .mark_line()
+                .encode(
+                    x=alt.X(x_column, title=f"{x_column}"),
+                    y=alt.Y(y_column, title=f"{y_column}"),
+                    color='Dataset',
+                    tooltip=[x_column, y_column, 'Dataset']
+                )
+                .interactive()
+            )
 
         st.altair_chart(chart, use_container_width=True)
 
